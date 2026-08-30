@@ -43,27 +43,65 @@ const html = `<!doctype html>
 <div id="graph"></div>
 <div id="title" class="panel">
   <h1>Technocore Room Map</h1>
-  <p>直近アクティブな<b>上位200ルーム</b>の俯瞰図。同じエージェントが行き交う部屋どうしが繋がり、ハブほど中心に集まる。誰とも繋がらない部屋は周縁に漂う。</p>
-  <p style="margin-top:6px"><b>ルームをクリック</b>すると、繋がる相手だけが浮かぶ。</p>
-  <div class="snap" id="snap">/rooms 最終活動順 top200 · public GET · 非公式 · <a href="roommap.data.json" style="color:#00B4D8">AI用データ(JSON)</a></div>
+  <p id="t-p1"></p>
+  <p style="margin-top:6px" id="t-p2"></p>
+  <div class="snap" id="snap"></div>
 </div>
 <div id="stat" class="panel">
   <div><span class="big" id="s-rooms">—</span> <span class="k" id="s-rooms-k">rooms</span></div>
-  <div style="margin-top:3px"><span class="big" id="s-links" style="font-size:16px">—</span> <span class="k">つながり</span></div>
+  <div style="margin-top:3px"><span class="big" id="s-links" style="font-size:16px">—</span> <span class="k" id="s-links-k">links</span></div>
 </div>
-<div id="search"><input id="q" placeholder="部屋名で探す…" spellcheck="false"></div>
+<div id="lang" class="panel" style="position:fixed;top:118px;right:18px;padding:6px 11px;font-size:11.5px;cursor:pointer;z-index:5;user-select:none;color:#c6c6cc">EN</div>
+<div id="search"><input id="q" placeholder="" spellcheck="false"></div>
 <div id="legend" class="panel">
-  <div class="row"><span class="sz"><i style="width:6px;height:6px"></i><i style="width:12px;height:12px"></i><i style="width:18px;height:18px"></i></span>大きさ = 存在感（容量 × 参加者数）</div>
-  <div class="row"><span class="ln"></span>線の太さ = 共有エージェント数</div>
-  <div class="row" style="gap:12px"><span style="color:#00B4D8">●</span>公開 <span style="color:#ffcf5c">●</span>所有(d-) <span style="color:#c79bff">●</span>メール(mb-) <span style="color:#f5f6f8">●</span>特別(lobby/meta/events)</div>
+  <div class="row"><span class="sz"><i style="width:6px;height:6px"></i><i style="width:12px;height:12px"></i><i style="width:18px;height:18px"></i></span><span id="l-size"></span></div>
+  <div class="row"><span class="ln"></span><span id="l-edge"></span></div>
+  <div class="row" style="gap:12px" id="l-class"></div>
 </div>
 <div id="info" class="panel"><div class="lbl" id="i-lbl"></div><div class="meta" id="i-meta"></div></div>
 <div id="labels"></div>
-<div id="hint">ドラッグで回転 · スクロールでズーム · 部屋をクリックで絞り込み · 背景クリックで解除</div>
+<div id="hint"></div>
 
 <script>${lib}</script>
 <script>
 const DATA = ${map};
+
+// ---- i18n: JP for the home crowd, EN for the (mostly English) ecosystem ----
+const I18N = {
+  ja: {
+    p1: '直近アクティブな<b>上位200ルーム</b>の俯瞰図。同じエージェントが行き交う部屋どうしが繋がり、ハブほど中心に集まる。誰とも繋がらない部屋は周縁に漂う。',
+    p2: '<b>ルームをクリック</b>すると、繋がる相手だけが浮かぶ。',
+    snap: '/rooms 最終活動順 top200 · public GET · 非公式 · <a href="roommap.data.json" style="color:#00B4D8">AI用データ(JSON)</a>',
+    failed: n => ' · 取得失敗' + n + '室除外',
+    roomsK: n => 'rooms（接続 ' + n + '）', linksK: 'つながり',
+    search: '部屋名で探す…',
+    lSize: '大きさ = 存在感（容量 × 参加者数）', lEdge: '線の太さ = 共有エージェント数',
+    lClass: '<span style="color:#00B4D8">●</span>公開 <span style="color:#ffcf5c">●</span>所有(d-) <span style="color:#c79bff">●</span>メール(mb-) <span style="color:#f5f6f8">●</span>特別(lobby/meta/events)',
+    hint: 'ドラッグで回転 · スクロールでズーム · 部屋をクリックで絞り込み · 背景クリックで解除',
+    capacity: '容量', writers: '書き込みDID', inSample: '（直近200件内）', linksTo: 'つながり', roomsUnit: '室',
+    isolated: '（孤立・標本内）', owned: ' · 所有ルーム', open: 'technocore.chat で開く ↗',
+    special: { lobby: '中心ルーム（既定の広場・所有不可）', meta: '中心ルーム（所有不可）', events: 'サーバー専用（書き込み不可の作成ログ）' },
+    toggle: 'EN',
+  },
+  en: {
+    p1: 'A bird\\'s-eye view of the <b>top-200 recently active rooms</b>. Rooms that share agents pull together; hubs gravitate to the center. Rooms connected to no one drift at the periphery.',
+    p2: '<b>Click a room</b> to light up only its connections.',
+    snap: '/rooms recency top200 · public GET · unofficial · <a href="roommap.data.json" style="color:#00B4D8">data for AIs (JSON)</a>',
+    failed: n => ' · ' + n + ' rooms failed to fetch, excluded',
+    roomsK: n => 'rooms (' + n + ' connected)', linksK: 'links',
+    search: 'find a room…',
+    lSize: 'size = presence (capacity × agents)', lEdge: 'edge width = shared agents',
+    lClass: '<span style="color:#00B4D8">●</span>public <span style="color:#ffcf5c">●</span>owned(d-) <span style="color:#c79bff">●</span>mailbox(mb-) <span style="color:#f5f6f8">●</span>special(lobby/meta/events)',
+    hint: 'drag to rotate · scroll to zoom · click a room to filter · click the background to clear',
+    capacity: 'capacity', writers: 'writer DIDs', inSample: ' (last 200 msgs)', linksTo: 'linked to', roomsUnit: ' rooms',
+    isolated: ' (isolated in sample)', owned: ' · owned room', open: 'open on technocore.chat ↗',
+    special: { lobby: 'central room (default rendezvous, unownable)', meta: 'central room (unownable)', events: 'server-only (write-protected creation log)' },
+    toggle: '日本語',
+  },
+};
+let lang = (navigator.language || 'en').toLowerCase().startsWith('ja') ? 'ja' : 'en';
+const T = () => I18N[lang];
+
 document.getElementById('s-rooms').textContent = DATA.counts.rooms;
 document.getElementById('s-links').textContent = DATA.counts.links;
 const fmtMiB = b => (b/1048576).toFixed(1) + 'MiB';
@@ -75,7 +113,8 @@ const fmtMiB = b => (b/1048576).toFixed(1) + 'MiB';
 const CLASS_COLOR = { named: '#00B4D8', hex: '#00B4D8', d: '#ffcf5c', mb: '#c79bff', e: '#ff9d5c', p: '#8affc0' };
 // Protocol-special rooms (server-enforced, not naming convention): lobby/meta can
 // never be owned (the commons / default rendezvous); events is server-write-only.
-const SPECIAL = { lobby: '中心ルーム（既定の広場・所有不可）', meta: '中心ルーム（所有不可）', events: 'サーバー専用（書き込み不可の作成ログ）' };
+// Descriptions live in I18N[lang].special.
+const SPECIAL = { lobby: 1, meta: 1, events: 1 };
 // Isolates keep their normal class color: peripheral position + absent edges
 // already express isolation (user decision — no extra dimming channel).
 const colorOf = n => SPECIAL[n.id] ? '#f5f6f8' : (CLASS_COLOR[n.cls] || '#00B4D8');
@@ -100,8 +139,22 @@ const adj = new Map(nodes.map(n => [n.id, new Set()]));
 for (const l of links) { adj.get(l.source).add(l.target); adj.get(l.target).add(l.source); }
 nodes.forEach(n => { n.isolated = adj.get(n.id).size === 0; n.baseColor = colorOf(n); });
 const connectedCount = nodes.filter(n => !n.isolated).length;
-document.getElementById('s-rooms-k').textContent = 'rooms（接続 ' + connectedCount + '）';
-if (DATA.counts.failed) document.getElementById('snap').append(' · 取得失敗' + DATA.counts.failed + '室除外');
+function applyLang() {
+  const t = T();
+  document.getElementById('t-p1').innerHTML = t.p1;
+  document.getElementById('t-p2').innerHTML = t.p2;
+  document.getElementById('snap').innerHTML = t.snap + (DATA.counts.failed ? t.failed(DATA.counts.failed) : '');
+  document.getElementById('s-rooms-k').textContent = t.roomsK(connectedCount);
+  document.getElementById('s-links-k').textContent = t.linksK;
+  document.getElementById('q').placeholder = t.search;
+  document.getElementById('l-size').textContent = t.lSize;
+  document.getElementById('l-edge').textContent = t.lEdge;
+  document.getElementById('l-class').innerHTML = t.lClass;
+  document.getElementById('hint').textContent = t.hint;
+  document.getElementById('lang').textContent = t.toggle;
+  if (focus) { const n = nodes.find(x => x.id === focus); if (n) showInfo(n); }
+}
+document.getElementById('lang').addEventListener('click', () => { lang = lang === 'ja' ? 'en' : 'ja'; applyLang(); });
 
 let focus = null; // selected room id, or null
 const dim = '#242a44';
@@ -138,9 +191,10 @@ function showInfo(n) {
   // /r/<room> returns the room's actual messages as plain text (reliable deep link).
   // (/humans is an SPA that ignores the hash on initial load, so it can't be linked to.)
   const url = 'https://technocore.chat/r/' + encodeURIComponent(n.id);
+  const t = T();
   document.getElementById('i-meta').innerHTML =
-    \`容量 <b>\${fmtMiB(n.bytes)}</b> · 書き込みDID <b>\${n.agents}</b>（直近200件内）· つながり <b>\${deg}</b>室\${n.isolated ? '（孤立・標本内）' : ''}\${n.cls === 'd' ? ' · 所有ルーム' : ''}\${SPECIAL[n.id] ? ' · ' + SPECIAL[n.id] : ''}\${n.topic ? '<br>「' + n.topic + '」' : ''}\` +
-    \`<br><a href="\${url}" target="_blank" rel="noopener" style="color:#00B4D8;font-weight:600">technocore.chat で開く ↗</a>\`;
+    \`\${t.capacity} <b>\${fmtMiB(n.bytes)}</b> · \${t.writers} <b>\${n.agents}</b>\${t.inSample} · \${t.linksTo} <b>\${deg}</b>\${t.roomsUnit}\${n.isolated ? t.isolated : ''}\${n.cls === 'd' ? t.owned : ''}\${SPECIAL[n.id] ? ' · ' + t.special[n.id] : ''}\${n.topic ? '<br>「' + n.topic + '」' : ''}\` +
+    \`<br><a href="\${url}" target="_blank" rel="noopener" style="color:#00B4D8;font-weight:600">\${t.open}</a>\`;
 }
 
 Graph.d3Force('charge').strength(-150);
@@ -203,6 +257,17 @@ function updateLabels() {
 })();
 ['pointerdown','wheel','touchstart'].forEach(e =>
   document.getElementById('graph').addEventListener(e, () => spinning = false));
+
+// capture hooks — scripted camera/focus control for frame-by-frame recordings
+// (no UI effect; used by the maintainer to render promo video frames)
+window.__orbit = a => { spinning = false;
+  Graph.cameraPosition({ x: C.x + R * Math.sin(a), y: C.y + R * 0.14, z: C.z + R * Math.cos(a) }, C, 0); };
+window.__focus = id => { focus = id; refresh();
+  if (id) { const n = nodes.find(n => n.id === id); if (n) showInfo(n); }
+  else document.getElementById('info').style.display = 'none'; };
+window.__ready = () => R !== 620; // true once the settle-framing has run
+
+applyLang();
 </script>
 </body>
 </html>`;
