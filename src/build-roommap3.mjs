@@ -43,12 +43,12 @@ const html = `<!doctype html>
 <div id="graph"></div>
 <div id="title" class="panel">
   <h1>Technocore Room Map</h1>
-  <p>直近アクティブな<b>上位200ルーム</b>の俯瞰図。同じエージェントが行き交う部屋どうしが繋がり、ハブほど中心に集まる。</p>
+  <p>直近アクティブな<b>上位200ルーム</b>の俯瞰図。同じエージェントが行き交う部屋どうしが繋がり、ハブほど中心に集まる。誰とも繋がらない部屋は周縁に漂う。</p>
   <p style="margin-top:6px"><b>ルームをクリック</b>すると、繋がる相手だけが浮かぶ。</p>
   <div class="snap" id="snap">/rooms 最終活動順 top200 · public GET · 非公式 · <a href="roommap.data.json" style="color:#00B4D8">AI用データ(JSON)</a></div>
 </div>
 <div id="stat" class="panel">
-  <div><span class="big" id="s-rooms">—</span> <span class="k">rooms</span></div>
+  <div><span class="big" id="s-rooms">—</span> <span class="k" id="s-rooms-k">rooms</span></div>
   <div style="margin-top:3px"><span class="big" id="s-links" style="font-size:16px">—</span> <span class="k">つながり</span></div>
 </div>
 <div id="search"><input id="q" placeholder="部屋名で探す…" spellcheck="false"></div>
@@ -73,6 +73,8 @@ const fmtMiB = b => (b/1048576).toFixed(1) + 'MiB';
 // Normal public rooms use the FLOP brand accent (#00B4D8, from flop.finance).
 // d-=owned/gated, mb-=mailbox(signed-only), e-=ephemeral. (p-=private never listed.)
 const CLASS_COLOR = { named: '#00B4D8', hex: '#00B4D8', d: '#ffcf5c', mb: '#c79bff', e: '#ff9d5c', p: '#8affc0' };
+// Isolates keep their normal class color: peripheral position + absent edges
+// already express isolation (user decision — no extra dimming channel).
 const colorOf = n => CLASS_COLOR[n.cls] || '#00B4D8';
 // size by "hub presence" = capacity × unique agents (both normalized 0..1).
 // A room must be BOTH high-volume AND high-population to grow — this demotes
@@ -88,12 +90,15 @@ const nodes = DATA.rooms.map(r => ({
   id: r.name, bytes: r.bytes, agents: r.agents || 0, cls: r.cls, topic: r.topic,
   val: Math.pow(radiusOf(r), 3), baseColor: null,
 }));
-nodes.forEach(n => n.baseColor = colorOf(n));
 const links = DATA.links.map(l => ({ source: l.source, target: l.target, shared: l.shared }));
 
 // adjacency for click-focus
 const adj = new Map(nodes.map(n => [n.id, new Set()]));
 for (const l of links) { adj.get(l.source).add(l.target); adj.get(l.target).add(l.source); }
+nodes.forEach(n => { n.isolated = adj.get(n.id).size === 0; n.baseColor = colorOf(n); });
+const connectedCount = nodes.filter(n => !n.isolated).length;
+document.getElementById('s-rooms-k').textContent = 'rooms（接続 ' + connectedCount + '）';
+if (DATA.counts.failed) document.getElementById('snap').append(' · 取得失敗' + DATA.counts.failed + '室除外');
 
 let focus = null; // selected room id, or null
 const dim = '#242a44';
@@ -112,10 +117,11 @@ const Graph = ForceGraph3D()(document.getElementById('graph'))
   .linkColor(l => {
     const s = l.source.id || l.source, t = l.target.id || l.target;
     const on = !focus || s === focus || t === focus;
-    // neutral cool-gray wiring: recedes so the cyan/gold/purple nodes carry the color
-    return on ? 'rgba(150,160,180,0.5)' : 'rgba(95,105,130,0.05)';
+    // neutral cool-gray wiring, solid (no transparency) per user preference;
+    // only the focus-dimmed state stays faint so the selection can stand out
+    return on ? '#8b93a8' : 'rgba(95,105,130,0.05)';
   })
-  .linkOpacity(0.9)
+  .linkOpacity(1)
   .linkWidth(l => 0.35 + (l.shared / maxShared) * 4.5)
   .onNodeClick(n => { focus = (focus === n.id) ? null : n.id; refresh(); showInfo(n); })
   .onBackgroundClick(() => { focus = null; refresh(); document.getElementById('info').style.display = 'none'; });
@@ -130,7 +136,7 @@ function showInfo(n) {
   // (/humans is an SPA that ignores the hash on initial load, so it can't be linked to.)
   const url = 'https://technocore.chat/r/' + encodeURIComponent(n.id);
   document.getElementById('i-meta').innerHTML =
-    \`容量 <b>\${fmtMiB(n.bytes)}</b> · 書き込みDID <b>\${n.agents}</b>（直近200件内）· つながり <b>\${deg}</b>室\${n.cls === 'd' ? ' · 所有ルーム' : ''}\${n.topic ? '<br>「' + n.topic + '」' : ''}\` +
+    \`容量 <b>\${fmtMiB(n.bytes)}</b> · 書き込みDID <b>\${n.agents}</b>（直近200件内）· つながり <b>\${deg}</b>室\${n.isolated ? '（孤立・標本内）' : ''}\${n.cls === 'd' ? ' · 所有ルーム' : ''}\${n.topic ? '<br>「' + n.topic + '」' : ''}\` +
     \`<br><a href="\${url}" target="_blank" rel="noopener" style="color:#00B4D8;font-weight:600">technocore.chat で開く ↗</a>\`;
 }
 
@@ -155,13 +161,16 @@ for (const n of labeled) {
 }
 let angle = 0, spinning = true, R = 620, C = { x: 0, y: 0, z: 0 };
 setTimeout(() => {
-  const ns = Graph.graphData().nodes.filter(n => Number.isFinite(n.x));
+  // frame on the CONNECTED core (isolates scatter far and would zoom the map out);
+  // the isolate starfield simply surrounds the framed core
+  const all = Graph.graphData().nodes.filter(n => Number.isFinite(n.x));
+  const ns = all.filter(n => !n.isolated).length >= 3 ? all.filter(n => !n.isolated) : all;
   if (ns.length) {
     C = { x: 0, y: 0, z: 0 };
     for (const n of ns) { C.x += n.x; C.y += n.y; C.z += n.z; }
     C.x /= ns.length; C.y /= ns.length; C.z /= ns.length;
     const rad = ns.map(n => Math.hypot(n.x - C.x, n.y - C.y, n.z - C.z)).sort((a, b) => a - b);
-    R = Math.max(340, rad[Math.floor(rad.length * 0.9)] * 1.7);
+    R = Math.max(340, rad[Math.floor(rad.length * 0.9)] * 1.8);
   }
 }, 3800);
 function updateLabels() {

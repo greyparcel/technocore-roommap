@@ -45,7 +45,7 @@ console.error(`top rooms: ${entries.length}`);
 const roomDids = new Map();
 for (const e of entries) {
   const res = await get(`/r/${e.name}?format=json&limit=200`);
-  if (!res || !res.ok) { console.error(`  skip ${e.name}`); roomDids.set(e.name, new Set()); continue; }
+  if (!res || !res.ok) { console.error(`  FAILED ${e.name}`); e.failed = true; roomDids.set(e.name, new Set()); continue; }
   const data = await res.json();
   const dids = new Set((data.messages ?? []).map(m => m.from).filter(f => f && f.startsWith('did:key:')));
   roomDids.set(e.name, dids);
@@ -64,16 +64,18 @@ for (let i = 0; i < names.length; i++) for (let j = i + 1; j < names.length; j++
   if (shared > 0) links.push({ source: names[i], target: names[j], shared });
 }
 
-// 4) keep rooms that connect (>=1 edge) or are multi-agent; drop lone single-agent isolates
-const connected = new Set(links.flatMap(l => [l.source, l.target]));
-const rooms = entries.filter(e => connected.has(e.name) || (e.agents ?? 0) >= 2);
+// 4) keep ALL successfully-fetched rooms — isolates included (their presence at
+// the periphery is itself information: the long tail of solo/anchor rooms).
+// Only fetch failures are excluded, and they are counted explicitly.
+const rooms = entries.filter(e => !e.failed);
 const keepNames = new Set(rooms.map(r => r.name));
 const keptLinks = links.filter(l => keepNames.has(l.source) && keepNames.has(l.target));
 
 const out = {
-  generatedFor: 'Technocore room map v3 — overview (size=capacity, edge=shared DIDs)',
-  scopeNote: 'top-200 recency-active rooms; DIDs from last 200 msgs/room',
-  counts: { rooms: rooms.length, links: keptLinks.length, allTop: entries.length },
+  generatedFor: 'Technocore room map v3 — overview (size=presence, edge=shared DIDs, isolates shown faint)',
+  scopeNote: 'top-200 recency-active rooms; DIDs from last 200 msgs/room; isolation is sample-relative',
+  counts: { rooms: rooms.length, links: keptLinks.length, allTop: entries.length,
+    failed: entries.filter(e => e.failed).length },
   rooms, links: keptLinks,
 };
 console.log(JSON.stringify(out));
