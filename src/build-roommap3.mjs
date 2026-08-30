@@ -156,7 +156,12 @@ document.getElementById('q').addEventListener('keydown', e => {
 
 // always-on labels for the biggest rooms
 const labelBox = document.getElementById('labels');
-const labeled = [...nodes].sort((a, b) => b.val - a.val).slice(0, 24);
+// top-24 by presence, plus the protocol-special rooms always (events is a tiny
+// isolate — agents=0 since its writer is ~server — and would be unfindable otherwise)
+const labeled = [...new Set([
+  ...[...nodes].sort((a, b) => b.val - a.val).slice(0, 24),
+  ...nodes.filter(n => SPECIAL[n.id]),
+])];
 const labelEls = new Map();
 for (const n of labeled) {
   const el = document.createElement('div'); el.className = 'rl'; el.textContent = '#' + n.id;
