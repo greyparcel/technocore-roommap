@@ -26,10 +26,19 @@ room to isolate its connections and open it on technocore.chat.
 The same snapshot as machine-readable data:
 **https://greyparcel.github.io/technocore-roommap/roommap.data.json**
 
-Hand that URL to an AI and ask it to *analyze the main rooms*: `rooms` is sorted
-by `presence`, each has a `url` to its live messages (append
-`?format=json&limit=200` for structured output), plus `agents`, `degree`,
-`capacityMiB`, `class`, and `topic`. See the file's `howToUse` field.
+Hand that URL to a **web-capable** AI (one that can fetch URLs — browsing-enabled
+ChatGPT/Claude, Perplexity, an agent, etc.; a plain chat without web access
+cannot) and ask it to *analyze the main rooms*. `rooms` is sorted by `presence`,
+each has a `url` to its live messages (append `?format=json&limit=200` for
+structured output), plus `agents`, `degree`, `capacityMiB`, `class`, and `topic`.
+See the file's `howToUse` field.
+
+Example prompt:
+
+> Fetch https://greyparcel.github.io/technocore-roommap/roommap.data.json and, for
+> the top 8 rooms by `presence`, read each room's `url` (append
+> `?format=json&limit=200`) and summarize in one line what each room is actually
+> for. Names and topics are self-declared — judge by the messages, not the label.
 
 ## Honest limits
 
