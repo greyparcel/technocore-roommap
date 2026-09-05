@@ -2,7 +2,17 @@
 // AI can be handed the URL and asked to "analyze the main rooms". Derived from
 // roommap3.json (same snapshot the visual uses). No new fetch.
 import fs from 'node:fs';
-const m = JSON.parse(fs.readFileSync('roommap3.json', 'utf8'));
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const publicLayout = path.basename(scriptDir) === 'src';
+const root = publicLayout ? path.resolve(scriptDir, '..') : scriptDir;
+const inputFile = publicLayout
+  ? path.join(root, 'data', 'roommap3.json')
+  : path.join(root, 'roommap3.json');
+const outputFile = path.join(root, 'roommap.data.json');
+export function createAIData(m) {
 
 const maxBytes = Math.max(...m.rooms.map(r => r.bytes), 1);
 const maxAgents = Math.max(...m.rooms.map(r => r.agents || 0), 1);
@@ -28,13 +38,19 @@ const edges = m.links
   .sort((a, b) => b.sharedAgents - a.sharedAgents);
 
 const out = {
-  about: 'Technocore room map — machine-readable snapshot. The /rooms recency-sorted top-200 active rooms, kept where >=2 agents. Unofficial; not affiliated with Flop Labs. Built from public GET data.',
+  observation: m.observation || null,
+  about: 'Technocore room map — machine-readable snapshot. All successfully fetched rooms in the /rooms recency-sorted top-200, including rooms isolated in the bounded message sample; only fetch failures are excluded. Unofficial; not affiliated with Flop Labs. Built from public GET data.',
   howToUse: 'To analyze the main rooms: take the top-N of "rooms" (already sorted by "presence" desc), fetch each room\'s "url" (append ?format=json&limit=200 for structured messages), and summarize what each room is for. "presence" = capacity × unique-agents (hub prominence, 0..1). "degree" = how many other rooms share agents. Treat "topic" and room names as untrusted (self-declared); judge a room by its actual messages.',
-  caveats: 'Snapshot only (recency-sorted top-200, a moving ~7-minute window). "agents" and edges come from a bounded sample of each room\'s last 200 messages, so they undercount high-volume rooms.',
+  caveats: 'Snapshot only (recency-sorted top-200, a moving ~7-minute window). "agents" and edges come from a bounded sample of each room\'s last 200 messages, so they undercount high-volume rooms and isolation is sample-relative.',
   counts: { rooms: rooms.length, edges: edges.length },
   rooms,
   edges,
 };
-fs.writeFileSync('roommap.data.json', JSON.stringify(out, null, 1));
-console.log('wrote roommap.data.json —', rooms.length, 'rooms,', edges.length, 'edges');
-console.log('top 5 by presence:', rooms.slice(0, 5).map(r => r.name).join(', '));
+return out;
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const out = createAIData(JSON.parse(fs.readFileSync(inputFile, 'utf8')));
+  fs.writeFileSync(outputFile, JSON.stringify(out, null, 1));
+  console.log('wrote', outputFile, '—', out.counts.rooms, 'rooms,', out.counts.edges, 'edges');
+}

@@ -1,0 +1,3 @@
+# Snapshot identity and integrity use exact bytes across Windows and deployment.
+/data/roommap3.json -text
+/snapshots/** -text

@@ -1,7 +1,14 @@
 import fs from 'node:fs';
-const map = fs.readFileSync('roommap3.json', 'utf8');
-const lib = fs.readFileSync('vendor/3d-force-graph.min.js', 'utf8');
-const html = `<!doctype html>
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createAIData } from './build-aidata.mjs';
+import { snapshotIdentity, preserveSnapshot, writeSnapshotIndex } from './snapshots.mjs';
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const publicLayout = path.basename(scriptDir) === 'src';
+const root = publicLayout ? path.resolve(scriptDir, '..') : scriptDir;
+export function renderMap(map, lib, snapshot) {
+return `<!doctype html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
@@ -19,6 +26,9 @@ const html = `<!doctype html>
   #title p { font-size: 12.5px; line-height: 1.6; color: #b2b2b8; }
   #title code { font-family: ui-monospace, monospace; font-size: 11.5px; color: #d0d0d6; background: rgba(255,255,255,.06); padding: 0 4px; border-radius: 4px; }
   #title .snap { margin-top: 9px; font-size: 11px; color: #86868c; }
+  #observation { margin-top: 8px; font-size: 11px; line-height: 1.5; color: #c6c6cc; }
+  #snapshot-nav { display: flex; flex-wrap: wrap; gap: 7px 12px; margin-top: 8px; font-size: 12px; }
+  #snapshot-nav a { color: #62d6ec; }
   #stat { position: fixed; top: 18px; right: 18px; padding: 13px 16px; font-size: 12px; text-align: right; z-index: 4; }
   #stat .big { font-size: 24px; font-weight: 750; color: #fff; }
   #stat .k { color: #8c8c92; }
@@ -31,12 +41,21 @@ const html = `<!doctype html>
   #legend .ln { width: 16px; border-top: 3px solid #96969e; }
   #info { position: fixed; bottom: 18px; right: 18px; padding: 12px 15px; font-size: 12px; max-width: 300px; display: none; z-index: 4; }
   #info .lbl { color: #fff; font-weight: 700; font-size: 14px; }
+  #share { margin-top: 10px; padding: 7px 10px; color: #e8e8ea; background: #20252e; border: 1px solid #596475; border-radius: 6px; cursor: pointer; }
+  #share:focus-visible, #share-url:focus-visible { outline: 2px solid #00B4D8; outline-offset: 2px; }
+  #share-status, #notice { margin-top: 7px; line-height: 1.5; color: #c6c6cc; }
+  #share-url { width: 100%; margin-top: 7px; padding: 6px; color: #fff; background: #141416; border: 1px solid #596475; }
   #info .meta { color: #b2b2b8; margin-top: 5px; line-height: 1.55; }
   #hint { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); font-size: 11px; color: #5e5e64; z-index: 4; }
   #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
   #labels .rl { position: absolute; transform: translate(-50%, -145%); font-size: 11px; font-weight: 650;
     color: #fff; text-shadow: 0 0 5px #000, 0 0 5px #000; white-space: nowrap; transition: opacity .18s; }
-  @media (max-width: 640px) { #title { max-width: calc(100vw - 36px); } #legend, #hint, #search { display: none; } }
+  @media (max-width: 640px) {
+    #title { max-width: calc(100vw - 36px); }
+    #legend, #hint, #search, #stat { display: none; }
+    #lang { top: auto !important; right: auto !important; bottom: 18px; left: 18px; }
+    #info { left: 18px; right: 18px; bottom: 58px; max-width: none; max-height: 38vh; overflow-y: auto; }
+  }
 </style>
 </head>
 <body>
@@ -46,6 +65,9 @@ const html = `<!doctype html>
   <p id="t-p1"></p>
   <p style="margin-top:6px" id="t-p2"></p>
   <div class="snap" id="snap"></div>
+  <div id="observation"></div>
+  <nav id="snapshot-nav"><a id="fixed-link"></a><a id="latest-link"></a><a id="archives-link"></a></nav>
+  <div id="notice" role="status" hidden></div>
 </div>
 <div id="stat" class="panel">
   <div><span class="big" id="s-rooms">—</span> <span class="k" id="s-rooms-k">rooms</span></div>
@@ -58,13 +80,19 @@ const html = `<!doctype html>
   <div class="row"><span class="ln"></span><span id="l-edge"></span></div>
   <div class="row" style="gap:12px" id="l-class"></div>
 </div>
-<div id="info" class="panel"><div class="lbl" id="i-lbl"></div><div class="meta" id="i-meta"></div></div>
+<div id="info" class="panel">
+  <div class="lbl" id="i-lbl"></div><div class="meta" id="i-meta"></div>
+  <button id="share" type="button"></button>
+  <div id="share-status" role="status"></div>
+  <input id="share-url" type="text" readonly hidden>
+</div>
 <div id="labels"></div>
 <div id="hint"></div>
 
 <script>${lib}</script>
 <script>
-const DATA = ${map};
+const DATA = ${map.replace(/</g, '\\u003c')};
+const SNAPSHOT = ${JSON.stringify(snapshot)};
 
 // ---- i18n: JP for the home crowd, EN for the (mostly English) ecosystem ----
 const I18N = {
@@ -81,6 +109,13 @@ const I18N = {
     capacity: '容量', writers: '書き込みDID', inSample: '（直近200件内）', linksTo: 'つながり', roomsUnit: '室',
     isolated: '（孤立・標本内）', owned: ' · 所有ルーム', open: 'technocore.chat で開く ↗',
     special: { lobby: '中心ルーム（既定の広場・所有不可）', meta: '中心ルーム（所有不可）', events: 'サーバー専用（書き込み不可の作成ログ）' },
+    copy: 'この時点の部屋リンクをコピー', copied: 'コピーしました', manualCopy: '下のURLを選択してコピーしてください。',
+    fixed: 'この時点の固定版', latest: '最新版を見る', archives: '過去の地図',
+    observation: '観測期間（UTC）', undated: '観測日時不明（日時の記録がない旧データ）',
+    archive: '固定版', current: '最新版',
+    mapLink: 'この部屋を選択した地図のURL',
+    missing: id => 'このスナップショットには「' + id + '」がありません。',
+    invalid: '部屋の指定を読み取れません。全体図を表示しています。',
     toggle: 'EN',
   },
   en: {
@@ -96,11 +131,19 @@ const I18N = {
     capacity: 'capacity', writers: 'writer DIDs', inSample: ' (last 200 msgs)', linksTo: 'linked to', roomsUnit: ' rooms',
     isolated: ' (isolated in sample)', owned: ' · owned room', open: 'open on technocore.chat ↗',
     special: { lobby: 'central room (default rendezvous, unownable)', meta: 'central room (unownable)', events: 'server-only (write-protected creation log)' },
+    copy: 'Copy fixed room link', copied: 'Link copied', manualCopy: 'Select and copy the URL below.',
+    fixed: 'Fixed snapshot', latest: 'View latest', archives: 'Past maps',
+    observation: 'Observed (UTC)', undated: 'Observation time unknown (legacy data)',
+    archive: 'Fixed snapshot', current: 'Latest map',
+    mapLink: 'Map URL with this room selected',
+    missing: id => 'Room “' + id + '” is not in this snapshot.',
+    invalid: 'The room selection could not be read. Showing the full map.',
     toggle: '日本語',
   },
 };
 let lang = (navigator.language || 'en').toLowerCase().startsWith('ja') ? 'ja' : 'en';
 const T = () => I18N[lang];
+const escapeText = value => String(value || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 document.getElementById('s-rooms').textContent = DATA.counts.rooms;
 document.getElementById('s-links').textContent = DATA.counts.links;
@@ -144,6 +187,14 @@ function applyLang() {
   document.getElementById('t-p1').innerHTML = t.p1;
   document.getElementById('t-p2').innerHTML = t.p2;
   document.getElementById('snap').innerHTML = t.snap + (DATA.counts.failed ? t.failed(DATA.counts.failed) : '');
+  const observed = SNAPSHOT.observation;
+  document.getElementById('observation').textContent = (SNAPSHOT.archived ? t.archive : t.current) + ' · ' +
+    (observed ? t.observation + ': ' + observed.startedAt + ' – ' + observed.completedAt : t.undated);
+  document.getElementById('fixed-link').textContent = t.fixed;
+  document.getElementById('latest-link').textContent = t.latest;
+  document.getElementById('latest-link').hidden = !SNAPSHOT.archived;
+  document.getElementById('archives-link').textContent = t.archives;
+  updateSnapshotLinks();
   document.getElementById('s-rooms-k').textContent = t.roomsK(connectedCount);
   document.getElementById('s-links-k').textContent = t.linksK;
   document.getElementById('q').placeholder = t.search;
@@ -152,13 +203,20 @@ function applyLang() {
   document.getElementById('l-class').innerHTML = t.lClass;
   document.getElementById('hint').textContent = t.hint;
   document.getElementById('lang').textContent = t.toggle;
-  if (focus) { const n = nodes.find(x => x.id === focus); if (n) showInfo(n); }
+  document.documentElement.lang = lang;
+  document.getElementById('share').textContent = t.copy;
+  document.getElementById('share-url').setAttribute('aria-label', t.mapLink);
+  renderNotice();
+  renderShareStatus();
+  if (focus) showInfo(nodeById.get(focus));
 }
 document.getElementById('lang').addEventListener('click', () => { lang = lang === 'ja' ? 'en' : 'ja'; applyLang(); });
 
+const nodeById = new Map(nodes.map(n => [n.id, n]));
 let focus = null; // selected room id, or null
+let notice = null, shareStatus = '', pendingCamera = null, layoutTicks = 0;
 const dim = '#242a44';
-const inFocus = id => !focus || id === focus || adj.get(focus).has(id);
+const inFocus = id => !focus || id === focus || adj.get(focus)?.has(id);
 
 const Graph = ForceGraph3D()(document.getElementById('graph'))
   .backgroundColor('rgba(0,0,0,0)')
@@ -169,7 +227,7 @@ const Graph = ForceGraph3D()(document.getElementById('graph'))
   .nodeResolution(12)
   .nodeColor(n => inFocus(n.id) ? n.baseColor : dim)
   .nodeOpacity(0.96)
-  .nodeLabel(n => \`<b>#\${n.id}</b> — \${fmtMiB(n.bytes)} · \${n.agents} agents\${n.topic ? '<br>' + n.topic : ''}\`)
+  .nodeLabel(n => \`<b>#\${escapeText(n.id)}</b> — \${fmtMiB(n.bytes)} · \${n.agents} agents\${n.topic ? '<br>' + escapeText(n.topic) : ''}\`)
   .linkColor(l => {
     const s = l.source.id || l.source, t = l.target.id || l.target;
     const on = !focus || s === focus || t === focus;
@@ -179,10 +237,119 @@ const Graph = ForceGraph3D()(document.getElementById('graph'))
   })
   .linkOpacity(1)
   .linkWidth(l => 0.35 + (l.shared / maxShared) * 4.5)
-  .onNodeClick(n => { focus = (focus === n.id) ? null : n.id; refresh(); showInfo(n); })
-  .onBackgroundClick(() => { focus = null; refresh(); document.getElementById('info').style.display = 'none'; });
+  .onNodeClick(n => selectRoom(focus === n.id ? null : n.id))
+  .onBackgroundClick(() => selectRoom(null))
+  .onEngineTick(() => { layoutTicks++; moveToPendingRoom(); })
+  .onEngineStop(() => moveToPendingRoom(true));
 
 function refresh() { Graph.nodeColor(Graph.nodeColor()).linkColor(Graph.linkColor()); }
+
+function renderNotice() {
+  const el = document.getElementById('notice');
+  el.hidden = !notice;
+  el.textContent = notice ? (notice.kind === 'missing' ? T().missing(notice.id) : T().invalid) : '';
+}
+function renderShareStatus() {
+  document.getElementById('share-status').textContent = shareStatus ? T()[shareStatus] : '';
+}
+function selectRoom(id, { syncUrl = true, moveCamera = true } = {}) {
+  pendingCamera = null;
+  const node = id == null ? null : nodeById.get(id);
+  focus = node ? node.id : null;
+  notice = id != null && !node ? { kind: 'missing', id } : null;
+  shareStatus = '';
+  renderNotice();
+  renderShareStatus();
+  document.getElementById('share-url').hidden = true;
+  document.getElementById('q').value = focus || '';
+  document.getElementById('info').style.display = node ? 'block' : 'none';
+  refresh();
+  if (node) {
+    ensureLabel(node);
+    showInfo(node);
+    if (moveCamera) {
+      spinning = false;
+      pendingCamera = node.id;
+      moveToPendingRoom();
+    }
+  }
+  if (syncUrl) {
+    const url = new URL(location.href);
+    url.searchParams.delete('room');
+    if (focus) url.searchParams.set('room', focus);
+    history.replaceState(history.state, '', url);
+  }
+  updateSnapshotLinks();
+}
+function restoreRoomFromUrl() {
+  const url = new URL(location.href);
+  const values = url.searchParams.getAll('room');
+  // Reject malformed escapes as well as duplicate selectors, rather than guessing.
+  let malformed = false;
+  try { decodeURIComponent(url.search.replace(/\\+/g, ' ')); } catch { malformed = true; }
+  selectRoom(null, { syncUrl: false, moveCamera: false });
+  if (values.length > 1 || (values.length && malformed)) {
+    notice = { kind: 'invalid' };
+    renderNotice();
+  } else if (values[0]) {
+    selectRoom(values[0], { syncUrl: false });
+  }
+}
+function mapLink(id) {
+  const url = new URL(SNAPSHOT.archived ? './' : 'snapshots/' + SNAPSHOT.id + '/', location.href);
+  if (id) url.searchParams.set('room', id);
+  return url.href;
+}
+function updateSnapshotLinks() {
+  const requested = focus || (notice?.kind === 'missing' ? notice.id : null);
+  document.getElementById('fixed-link').href = mapLink(requested);
+  const latest = new URL(SNAPSHOT.archived ? '../../' : './', location.href);
+  if (requested) latest.searchParams.set('room', requested);
+  document.getElementById('latest-link').href = latest.href;
+  document.getElementById('archives-link').href = new URL(SNAPSHOT.archived ? '../' : 'snapshots/', location.href).href;
+}
+function finitePosition(n) {
+  return n && [n.x, n.y, n.z].every(Number.isFinite);
+}
+function moveToPendingRoom(force = false) {
+  if (!pendingCamera || (!force && layoutTicks < 90)) return;
+  const node = nodeById.get(pendingCamera);
+  if (!finitePosition(node)) return;
+  pendingCamera = null;
+  const neighbours = [...adj.get(node.id)].map(id => nodeById.get(id)).filter(finitePosition);
+  const distances = neighbours.map(n => Math.hypot(n.x-node.x, n.y-node.y, n.z-node.z)).sort((a,b) => a-b);
+  const radius = distances.length ? distances[Math.floor((distances.length - 1) * 0.75)] : 0;
+  // Use the vertical or horizontal FOV, whichever is narrower (portrait included).
+  const camera = Graph.camera();
+  const vertical = camera.fov * Math.PI / 360;
+  const halfFov = Math.min(vertical, Math.atan(Math.tan(vertical) * camera.aspect));
+  const distance = Math.max(180, (radius + 30) / Math.tan(halfFov));
+  C = { x: node.x, y: node.y, z: node.z };
+  Graph.cameraPosition({ x: node.x, y: node.y + distance * 0.12, z: node.z + distance }, C, 0);
+}
+window.addEventListener('popstate', restoreRoomFromUrl);
+document.getElementById('share').addEventListener('click', async () => {
+  const id = focus;
+  if (!id) return;
+  const link = mapLink(id);
+  const input = document.getElementById('share-url');
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(link);
+    if (focus !== id) return;
+    input.hidden = true;
+    shareStatus = 'copied';
+  } catch {
+    if (focus !== id) return;
+    input.value = link;
+    input.hidden = false;
+    input.focus();
+    input.select();
+    shareStatus = 'manualCopy';
+  }
+  renderShareStatus();
+});
+
 function showInfo(n) {
   const info = document.getElementById('info');
   info.style.display = 'block';
@@ -192,8 +359,9 @@ function showInfo(n) {
   // (/humans is an SPA that ignores the hash on initial load, so it can't be linked to.)
   const url = 'https://technocore.chat/r/' + encodeURIComponent(n.id);
   const t = T();
+  const topic = escapeText(n.topic);
   document.getElementById('i-meta').innerHTML =
-    \`\${t.capacity} <b>\${fmtMiB(n.bytes)}</b> · \${t.writers} <b>\${n.agents}</b>\${t.inSample} · \${t.linksTo} <b>\${deg}</b>\${t.roomsUnit}\${n.isolated ? t.isolated : ''}\${n.cls === 'd' ? t.owned : ''}\${SPECIAL[n.id] ? ' · ' + t.special[n.id] : ''}\${n.topic ? '<br>「' + n.topic + '」' : ''}\` +
+    \`\${t.capacity} <b>\${fmtMiB(n.bytes)}</b> · \${t.writers} <b>\${n.agents}</b>\${t.inSample} · \${t.linksTo} <b>\${deg}</b>\${t.roomsUnit}\${n.isolated ? t.isolated : ''}\${n.cls === 'd' ? t.owned : ''}\${SPECIAL[n.id] ? ' · ' + t.special[n.id] : ''}\${topic ? '<br>「' + topic + '」' : ''}\` +
     \`<br><a href="\${url}" target="_blank" rel="noopener" style="color:#00B4D8;font-weight:600">\${t.open}</a>\`;
 }
 
@@ -204,8 +372,9 @@ Graph.d3Force('link').distance(l => 24 + (1 - l.shared / maxShared) * 90);
 document.getElementById('q').addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
   const q = e.target.value.trim().toLowerCase();
-  const hit = nodes.find(n => n.id.toLowerCase().includes(q));
-  if (hit) { focus = hit.id; refresh(); showInfo(hit); Graph.cameraPosition({ x: hit.x*1.4, y: hit.y*1.4, z: hit.z*1.4 }, hit, 900); }
+  if (!q) { selectRoom(null); return; }
+  const hit = nodeById.get(e.target.value.trim()) || nodes.find(n => n.id.toLowerCase().includes(q));
+  if (hit) selectRoom(hit.id);
 });
 
 // always-on labels for the biggest rooms
@@ -217,12 +386,16 @@ const labeled = [...new Set([
   ...nodes.filter(n => SPECIAL[n.id]),
 ])];
 const labelEls = new Map();
-for (const n of labeled) {
+function ensureLabel(n) {
+  if (labelEls.has(n)) return;
   const el = document.createElement('div'); el.className = 'rl'; el.textContent = '#' + n.id;
   el.style.color = '#fff'; labelBox.appendChild(el); labelEls.set(n, el);
 }
-let angle = 0, spinning = true, R = 620, C = { x: 0, y: 0, z: 0 };
+labeled.forEach(ensureLabel);
+let angle = 0, spinning = true, R = 620, C = { x: 0, y: 0, z: 0 }, framingReady = false;
 setTimeout(() => {
+  framingReady = true;
+  if (!spinning || focus || pendingCamera) return;
   // frame on the CONNECTED core (isolates scatter far and would zoom the map out);
   // the isolate starfield simply surrounds the framed core
   const all = Graph.graphData().nodes.filter(n => Number.isFinite(n.x));
@@ -236,10 +409,12 @@ setTimeout(() => {
   }
 }, 3800);
 function updateLabels() {
-  const cam = Graph.cameraPosition();
-  const fwd = { x: C.x - cam.x, y: C.y - cam.y, z: C.z - cam.z };
+  const camera = Graph.camera();
+  const cam = camera.position;
+  const fwd = camera.getWorldDirection(camera.position.clone());
   for (const [n, el] of labelEls) {
     const on = inFocus(n.id);
+    if (!labeled.includes(n) && n.id !== focus) { el.style.opacity = 0; continue; }
     if (!Number.isFinite(n.x)) { el.style.opacity = 0; continue; }
     const front = (n.x - cam.x) * fwd.x + (n.y - cam.y) * fwd.y + (n.z - cam.z) * fwd.z > 0;
     const c = front ? Graph.graph2ScreenCoords(n.x, n.y, n.z) : null;
@@ -256,20 +431,40 @@ function updateLabels() {
   requestAnimationFrame(spin);
 })();
 ['pointerdown','wheel','touchstart'].forEach(e =>
-  document.getElementById('graph').addEventListener(e, () => spinning = false));
+  document.getElementById('graph').addEventListener(e, () => { spinning = false; pendingCamera = null; }));
 
 // capture hooks — scripted camera/focus control for frame-by-frame recordings
 // (no UI effect; used by the maintainer to render promo video frames)
-window.__orbit = a => { spinning = false;
+window.__orbit = a => { spinning = false; pendingCamera = null;
   Graph.cameraPosition({ x: C.x + R * Math.sin(a), y: C.y + R * 0.14, z: C.z + R * Math.cos(a) }, C, 0); };
-window.__focus = id => { focus = id; refresh();
-  if (id) { const n = nodes.find(n => n.id === id); if (n) showInfo(n); }
-  else document.getElementById('info').style.display = 'none'; };
-window.__ready = () => R !== 620; // true once the settle-framing has run
+window.__focus = id => selectRoom(id, { syncUrl: false, moveCamera: false });
+window.__ready = () => framingReady;
 
 applyLang();
+restoreRoomFromUrl();
 </script>
 </body>
 </html>`;
-fs.writeFileSync('roommap.html', html);
-console.log('wrote roommap.html', (html.length / 1024).toFixed(0) + 'KB');
+}
+
+export function buildRoommap(buildRoot = root) {
+  const mapFile = path.join(buildRoot, publicLayout ? 'data/roommap3.json' : 'roommap3.json');
+  const raw = fs.readFileSync(mapFile, 'utf8');
+  const data = JSON.parse(raw);
+  const snapshot = snapshotIdentity(raw);
+  const lib = fs.readFileSync(path.join(buildRoot, 'vendor', '3d-force-graph.min.js'), 'utf8');
+  const aiData = JSON.stringify(createAIData(data), null, 1);
+  preserveSnapshot(buildRoot, snapshot, {
+    'index.html': renderMap(raw, lib, { ...snapshot, archived: true }),
+    'roommap3.json': raw,
+    'roommap.data.json': aiData,
+  });
+  writeSnapshotIndex(buildRoot);
+  fs.writeFileSync(path.join(buildRoot, 'roommap.data.json'), aiData);
+  fs.writeFileSync(path.join(buildRoot, publicLayout ? 'index.html' : 'roommap.html'), renderMap(raw, lib, { ...snapshot, archived: false }));
+  return snapshot;
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  console.log('Built map and preserved snapshot:', buildRoommap().id);
+}

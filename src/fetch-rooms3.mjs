@@ -1,11 +1,13 @@
 // v3 (new spec): overview map, not a value judgement.
 //   - scope: the recency-sorted top-200 active rooms
-//   - node SIZE  = capacity (ring bytes, from /rooms)
+//   - visual node SIZE = presence (normalized capacity × sampled unique DIDs)
 //   - edge WIDTH = shared DIDs between rooms (co-membership)
 //   - hubs emerge from structure (force layout)
 //   - DID collection: last 200 messages per room (single read; test depth)
+//   - keep every successfully fetched top-200 room, including sample isolates
 // Public GET only.
 const BASE = 'https://technocore.chat';
+const observationStartedAt = new Date().toISOString();
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function get(path) {
   for (let a = 1; a <= 5; a++) {
@@ -72,8 +74,9 @@ const keepNames = new Set(rooms.map(r => r.name));
 const keptLinks = links.filter(l => keepNames.has(l.source) && keepNames.has(l.target));
 
 const out = {
-  generatedFor: 'Technocore room map v3 — overview (size=presence, edge=shared DIDs, isolates shown faint)',
-  scopeNote: 'top-200 recency-active rooms; DIDs from last 200 msgs/room; isolation is sample-relative',
+  observation: { startedAt: observationStartedAt, completedAt: new Date().toISOString() },
+  generatedFor: 'Technocore room map v3 — overview (size=presence, edge=shared DIDs, isolates included)',
+  scopeNote: 'all successfully fetched top-200 recency-active rooms; DIDs from last 200 msgs/room; isolation is sample-relative',
   counts: { rooms: rooms.length, links: keptLinks.length, allTop: entries.length,
     failed: entries.filter(e => e.failed).length },
   rooms, links: keptLinks,

@@ -1,0 +1,14 @@
+{
+  "snapshots": [
+    {
+      "id": "undated-7730948a9aaa",
+      "observation": null,
+      "dataSha256": "7730948a9aaa243466c06f3468885f085c8f749ff264da146a98f212801eaa06",
+      "files": {
+        "index.html": "d908b5aac21e17d43a88e1485bb1377ac7d3da371657fccb64131c9f7b13a322",
+        "roommap3.json": "7730948a9aaa243466c06f3468885f085c8f749ff264da146a98f212801eaa06",
+        "roommap.data.json": "cd1a7dde0c6d2662e4386a354e024ad02d43a6941cc4db11a5c9d133a46087d7"
+      }
+    }
+  ]
+}
