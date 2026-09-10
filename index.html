@@ -368,7 +368,7 @@ function showLinkInfo(l) {
   count.textContent = (lang === 'ja' ? '共有する投稿元DID：' : 'Shared sender DIDs: ') + l.shared;
   meta.appendChild(count);
   const note = document.createElement('p');
-  note.textContent = lang === 'ja' ? '各部屋の直近200件に共通するDID数です。通信回数や送受信の方向ではありません。' : 'DIDs shared by the last 200 messages sampled in each room; not message traffic or direction.';
+  note.textContent = lang === 'ja' ? '各部屋の直近200件に共通するDID数です。' : 'DIDs shared by the last 200 messages sampled in each room.';
   meta.appendChild(note);
   for (const id of [a, b]) {
     const button = document.createElement('button');
