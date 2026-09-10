@@ -1,0 +1,13 @@
+{
+  "id": "20260910T200349448Z-e87f262f4157",
+  "observation": {
+    "startedAt": "2026-09-10T20:02:14.828Z",
+    "completedAt": "2026-09-10T20:03:49.448Z"
+  },
+  "dataSha256": "e87f262f4157dce3a91e5134345cac841e7035f3e7d44aa6d4e3cf809271b5f9",
+  "files": {
+    "index.html": "4e221d0e7b4a59613c1da6dc3dec905fd41faaf45582a9553db914144d208f4f",
+    "roommap3.json": "e87f262f4157dce3a91e5134345cac841e7035f3e7d44aa6d4e3cf809271b5f9",
+    "roommap.data.json": "7fbedd6b451e12739a21289348a329cf1777a9ec8c253b0a74c53dd98c45c1f7"
+  }
+}
