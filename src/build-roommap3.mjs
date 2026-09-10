@@ -105,7 +105,7 @@ const I18N = {
     search: '部屋名で探す…',
     lSize: '大きさ = 存在感（容量 × 参加者数）', lEdge: '線の太さ = 共有エージェント数',
     lClass: '<span style="color:#00B4D8">●</span>公開 <span style="color:#ffcf5c">●</span>所有(d-) <span style="color:#c79bff">●</span>メール(mb-) <span style="color:#f5f6f8">●</span>特別(lobby/meta/events)',
-    hint: 'ドラッグで回転 · スクロールでズーム · 部屋をクリックで絞り込み · 背景クリックで解除',
+    hint: 'ドラッグで回転 · スクロールでズーム · 部屋で絞り込み · 線で共有数 · 背景で解除',
     capacity: '容量', writers: '書き込みDID', inSample: '（直近200件内）', linksTo: 'つながり', roomsUnit: '室',
     isolated: '（孤立・標本内）', owned: ' · 所有ルーム', open: 'technocore.chat で開く ↗',
     special: { lobby: '中心ルーム（既定の広場・所有不可）', meta: '中心ルーム（所有不可）', events: 'サーバー専用（書き込み不可の作成ログ）' },
@@ -127,7 +127,7 @@ const I18N = {
     search: 'find a room…',
     lSize: 'size = presence (capacity × agents)', lEdge: 'edge width = shared agents',
     lClass: '<span style="color:#00B4D8">●</span>public <span style="color:#ffcf5c">●</span>owned(d-) <span style="color:#c79bff">●</span>mailbox(mb-) <span style="color:#f5f6f8">●</span>special(lobby/meta/events)',
-    hint: 'drag to rotate · scroll to zoom · click a room to filter · click the background to clear',
+    hint: 'drag to rotate · scroll to zoom · click a room to filter · click a link for shared DIDs · background to clear',
     capacity: 'capacity', writers: 'writer DIDs', inSample: ' (last 200 msgs)', linksTo: 'linked to', roomsUnit: ' rooms',
     isolated: ' (isolated in sample)', owned: ' · owned room', open: 'open on technocore.chat ↗',
     special: { lobby: 'central room (default rendezvous, unownable)', meta: 'central room (unownable)', events: 'server-only (write-protected creation log)' },
@@ -208,15 +208,18 @@ function applyLang() {
   document.getElementById('share-url').setAttribute('aria-label', t.mapLink);
   renderNotice();
   renderShareStatus();
-  if (focus) showInfo(nodeById.get(focus));
+  if (selectedLink) showLinkInfo(selectedLink);
+  else if (focus) showInfo(nodeById.get(focus));
 }
 document.getElementById('lang').addEventListener('click', () => { lang = lang === 'ja' ? 'en' : 'ja'; applyLang(); });
 
 const nodeById = new Map(nodes.map(n => [n.id, n]));
 let focus = null; // selected room id, or null
+let selectedLink = null;
+const endpoint = n => n.id || n;
 let notice = null, shareStatus = '', pendingCamera = null, layoutTicks = 0;
 const dim = '#242a44';
-const inFocus = id => !focus || id === focus || adj.get(focus)?.has(id);
+const inFocus = id => selectedLink ? [endpoint(selectedLink.source), endpoint(selectedLink.target)].includes(id) : !focus || id === focus || adj.get(focus)?.has(id);
 
 const Graph = ForceGraph3D()(document.getElementById('graph'))
   .backgroundColor('rgba(0,0,0,0)')
@@ -229,6 +232,7 @@ const Graph = ForceGraph3D()(document.getElementById('graph'))
   .nodeOpacity(0.96)
   .nodeLabel(n => \`<b>#\${escapeText(n.id)}</b> — \${fmtMiB(n.bytes)} · \${n.agents} agents\${n.topic ? '<br>' + escapeText(n.topic) : ''}\`)
   .linkColor(l => {
+    if (selectedLink) return l === selectedLink ? '#00B4D8' : 'rgba(95,105,130,0.05)';
     const s = l.source.id || l.source, t = l.target.id || l.target;
     const on = !focus || s === focus || t === focus;
     // neutral cool-gray wiring, solid (no transparency) per user preference;
@@ -236,13 +240,20 @@ const Graph = ForceGraph3D()(document.getElementById('graph'))
     return on ? '#8b93a8' : 'rgba(95,105,130,0.05)';
   })
   .linkOpacity(1)
-  .linkWidth(l => 0.35 + (l.shared / maxShared) * 4.5)
+  .linkWidth(l => (l === selectedLink ? 2 : 0.35) + (l.shared / maxShared) * 4.5)
+  .linkHoverPrecision(4)
+  .onLinkClick(l => {
+    if (focus && ![endpoint(l.source), endpoint(l.target)].includes(focus)) return;
+    selectedLink = l; pendingCamera = null; spinning = false;
+    [l.source, l.target].forEach(n => ensureLabel(nodeById.get(endpoint(n))));
+    showLinkInfo(l); refresh();
+  })
   .onNodeClick(n => selectRoom(focus === n.id ? null : n.id))
   .onBackgroundClick(() => selectRoom(null))
   .onEngineTick(() => { layoutTicks++; moveToPendingRoom(); })
   .onEngineStop(() => moveToPendingRoom(true));
 
-function refresh() { Graph.nodeColor(Graph.nodeColor()).linkColor(Graph.linkColor()); }
+function refresh() { Graph.nodeColor(Graph.nodeColor()).linkColor(Graph.linkColor()).linkWidth(Graph.linkWidth()); }
 
 function renderNotice() {
   const el = document.getElementById('notice');
@@ -253,6 +264,7 @@ function renderShareStatus() {
   document.getElementById('share-status').textContent = shareStatus ? T()[shareStatus] : '';
 }
 function selectRoom(id, { syncUrl = true, moveCamera = true } = {}) {
+  selectedLink = null;
   pendingCamera = null;
   const node = id == null ? null : nodeById.get(id);
   focus = node ? node.id : null;
@@ -350,7 +362,31 @@ document.getElementById('share').addEventListener('click', async () => {
   renderShareStatus();
 });
 
+function showLinkInfo(l) {
+  document.getElementById('info').style.display = 'block';
+  const a = endpoint(l.source), b = endpoint(l.target);
+  document.getElementById('i-lbl').textContent = a + ' ↔ ' + b;
+  const meta = document.getElementById('i-meta');
+  meta.replaceChildren();
+  const count = document.createElement('p');
+  count.textContent = (lang === 'ja' ? '共有する投稿元DID：' : 'Shared sender DIDs: ') + l.shared;
+  meta.appendChild(count);
+  const note = document.createElement('p');
+  note.textContent = lang === 'ja' ? '各部屋の直近200件に共通するDID数です。通信回数や送受信の方向ではありません。' : 'DIDs shared by the last 200 messages sampled in each room; not message traffic or direction.';
+  meta.appendChild(note);
+  for (const id of [a, b]) {
+    const button = document.createElement('button');
+    button.textContent = '#' + id;
+    button.style.cssText = 'display:block;margin:8px 0;max-width:100%;overflow-wrap:anywhere;color:#00B4D8;background:#20252e;border:1px solid #596475;padding:6px;cursor:pointer';
+    button.onclick = () => selectRoom(id);
+    meta.appendChild(button);
+  }
+  document.getElementById('share').hidden = true;
+  document.getElementById('share-url').hidden = true;
+  shareStatus = ''; renderShareStatus();
+}
 function showInfo(n) {
+  document.getElementById('share').hidden = false;
   const info = document.getElementById('info');
   info.style.display = 'block';
   document.getElementById('i-lbl').textContent = '#' + n.id;
@@ -414,7 +450,7 @@ function updateLabels() {
   const fwd = camera.getWorldDirection(camera.position.clone());
   for (const [n, el] of labelEls) {
     const on = inFocus(n.id);
-    if (!labeled.includes(n) && n.id !== focus) { el.style.opacity = 0; continue; }
+    if (!labeled.includes(n) && n.id !== focus && !(selectedLink && inFocus(n.id))) { el.style.opacity = 0; continue; }
     if (!Number.isFinite(n.x)) { el.style.opacity = 0; continue; }
     const front = (n.x - cam.x) * fwd.x + (n.y - cam.y) * fwd.y + (n.z - cam.z) * fwd.z > 0;
     const c = front ? Graph.graph2ScreenCoords(n.x, n.y, n.z) : null;

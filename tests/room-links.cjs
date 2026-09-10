@@ -12,7 +12,14 @@ const { createHash } = require('node:crypto');
 const dataHash = createHash('sha256').update(fs.readFileSync(path.join(root, 'data/roommap3.json'))).digest('hex');
 const snapshot = JSON.parse(fs.readFileSync(path.join(root, 'snapshots/index.json'))).snapshots.find(item => item.dataSha256 === dataHash);
 assert(snapshot, 'Build the snapshot archive before running browser checks.');
-const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const productionHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+// Keep interaction checks independent of the changing live graph's rendering cost.
+const fixture = JSON.parse(fs.readFileSync(path.join(root, 'data/roommap3.json'), 'utf8'));
+fixture.rooms = fixture.rooms.filter(r => ['kibble', 'events', 'technocore'].includes(r.name));
+fixture.links = [{ source: 'kibble', target: 'technocore', shared: 7 }];
+fixture.counts.rooms = fixture.rooms.length;
+fixture.counts.links = fixture.links.length;
+const html = productionHtml.replace(/const DATA = [\s\S]*?;\r?\nconst SNAPSHOT =/, () => 'const DATA = ' + JSON.stringify(fixture) + ';\nconst SNAPSHOT =');
 for (const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new vm.Script(match[1]);
 
 const server = http.createServer((req, res) => {
@@ -41,7 +48,7 @@ const server = http.createServer((req, res) => {
     }));
     const page = await context.newPage();
     const errors = [];
-    page.on('pageerror', e => errors.push(e.message));
+    page.on('pageerror', e => { errors.push(e.message); console.error(e.message); });
     await page.goto(base + '?room=k%69bble&source=test#keep');
     await page.waitForFunction(() => focus === 'kibble' && pendingCamera === null && layoutTicks >= 90);
     assert.equal(await page.locator('#i-lbl').textContent(), '#kibble');
@@ -61,6 +68,25 @@ const server = http.createServer((req, res) => {
     assert.equal(await page.locator('#share-url').inputValue(), fixed);
     assert.equal(await page.locator('#share-url').isVisible(), true);
     console.log('PASS: direct selection, camera, clean sharing, clipboard fallback');
+
+    const edge = await page.evaluate(() => {
+      const l = links.find(l => [endpoint(l.source), endpoint(l.target)].includes('kibble'));
+      Graph.onLinkClick()(l);
+      return { a: endpoint(l.source), b: endpoint(l.target), shared: l.shared };
+    });
+    assert.equal(await page.locator('#i-lbl').textContent(), edge.a + ' ↔ ' + edge.b);
+    assert((await page.locator('#i-meta').textContent()).includes('共有する投稿元DID：' + edge.shared));
+    assert.equal(await page.locator('#share').isVisible(), false);
+    await page.locator('#lang').click();
+    assert((await page.locator('#i-meta').textContent()).includes('Shared sender DIDs: ' + edge.shared));
+    await page.locator('#lang').click();
+    await page.locator('#i-meta button').first().click();
+    assert.equal(await page.evaluate(() => selectedLink), null);
+    assert.equal(await page.evaluate(() => focus), edge.a);
+    assert.equal(await page.locator('#share').isVisible(), true);
+    await page.evaluate(() => Graph.onBackgroundClick()());
+    assert.equal(await page.locator('#info').isVisible(), false);
+    console.log('PASS: edge count, languages, endpoint selection, sharing restoration, background clearing');
 
     const startHistory = await page.evaluate(() => history.length);
     await page.locator('#q').fill('events');

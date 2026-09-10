@@ -16,7 +16,9 @@ let browser, server;
 try {
   fs.mkdirSync(path.join(root, 'data'));
   fs.mkdirSync(path.join(root, 'vendor'));
-  const source = fs.readFileSync(path.join(repository, 'data/roommap3.json'), 'utf8');
+  const fixture = JSON.parse(fs.readFileSync(path.join(repository, 'data/roommap3.json'), 'utf8'));
+  delete fixture.observation;
+  const source = JSON.stringify(fixture);
   const mapFile = path.join(root, 'data/roommap3.json');
   fs.writeFileSync(mapFile, source);
   fs.copyFileSync(path.join(repository, 'vendor/3d-force-graph.min.js'), path.join(root, 'vendor/3d-force-graph.min.js'));
