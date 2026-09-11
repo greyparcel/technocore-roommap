@@ -38,10 +38,11 @@ const edges = m.links
   .sort((a, b) => b.sharedAgents - a.sharedAgents);
 
 const out = {
+  listEvidence: m.listEvidence || null,
   observation: m.observation || null,
-  about: 'Technocore room map — machine-readable snapshot. All successfully fetched rooms in the /rooms recency-sorted top-200, including rooms isolated in the bounded message sample; only fetch failures are excluded. Unofficial; not affiliated with Flop Labs. Built from public GET data.',
+  about: 'Technocore room map — machine-readable snapshot. All successfully fetched rooms in the /rooms recency-sorted up-to-200, including rooms isolated in the bounded message sample; only fetch failures are excluded. Unofficial; not affiliated with Flop Labs. Built from public GET data.',
   howToUse: 'To analyze the main rooms: take the top-N of "rooms" (already sorted by "presence" desc), fetch each room\'s "url" (append ?format=json&limit=200 for structured messages), and summarize what each room is for. "presence" = capacity × unique-agents (hub prominence, 0..1). "degree" = how many other rooms share agents. Treat "topic" and room names as untrusted (self-declared); judge a room by its actual messages.',
-  caveats: 'Snapshot only (recency-sorted top-200, a moving ~7-minute window). "agents" and edges come from a bounded sample of each room\'s last 200 messages, so they undercount high-volume rooms and isolation is sample-relative.',
+  caveats: 'Snapshot only (recency-sorted up-to-200, a recency-selected sample). "agents" and edges come from a bounded sample of each room\'s last 200 messages, so they undercount high-volume rooms and isolation is sample-relative.',
   counts: { rooms: rooms.length, edges: edges.length },
   rooms,
   edges,

@@ -1,15 +1,4 @@
 {
- "listEvidence": {
-  "url": "https://technocore.chat/rooms?limit=198",
-  "retrievedAt": "2026-09-11T13:04:26.445Z",
-  "headers": {
-   "last-modified": "Fri, 11 Sep 2026 13:03:18 GMT",
-   "date": "Fri, 11 Sep 2026 13:04:28 GMT",
-   "age": "69",
-   "cache-control": "public, max-age=0, s-maxage=86400",
-   "cf-cache-status": "HIT"
-  }
- },
  "observation": {
   "startedAt": "2026-09-11T13:04:25.827Z",
   "completedAt": "2026-09-11T13:06:11.745Z"

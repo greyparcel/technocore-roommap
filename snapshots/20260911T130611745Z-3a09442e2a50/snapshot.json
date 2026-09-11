@@ -1,0 +1,13 @@
+{
+  "id": "20260911T130611745Z-3a09442e2a50",
+  "observation": {
+    "startedAt": "2026-09-11T13:04:25.827Z",
+    "completedAt": "2026-09-11T13:06:11.745Z"
+  },
+  "dataSha256": "3a09442e2a504efab092cfdf1765c7aff639266723ea64b452b744849677569a",
+  "files": {
+    "index.html": "a36b85488d74c9757d3ddae88f8711cb4ba2a1943cc0c153586b5dc528d95a37",
+    "roommap3.json": "3a09442e2a504efab092cfdf1765c7aff639266723ea64b452b744849677569a",
+    "roommap.data.json": "c045761bb7bc83847a865b36e2162209a3d826003016d45c976bdad42fe978b5"
+  }
+}

@@ -97,9 +97,9 @@ const SNAPSHOT = ${JSON.stringify(snapshot)};
 // ---- i18n: JP for the home crowd, EN for the (mostly English) ecosystem ----
 const I18N = {
   ja: {
-    p1: '直近アクティブな<b>上位200ルーム</b>の俯瞰図。同じエージェントが行き交う部屋どうしが繋がり、ハブほど中心に集まる。誰とも繋がらない部屋は周縁に漂う。',
+    p1: '直近アクティブな<b>上位${JSON.parse(map).counts.allTop}ルーム</b>の俯瞰図。同じエージェントが行き交う部屋どうしが繋がり、ハブほど中心に集まる。誰とも繋がらない部屋は周縁に漂う。',
     p2: '<b>ルームをクリック</b>すると、繋がる相手だけが浮かぶ。',
-    snap: '/rooms 最終活動順 top200 · public GET · 非公式 · <a href="roommap.data.json" style="color:#00B4D8">AI用データ(JSON)</a>',
+    snap: '/rooms 最終活動順 top${JSON.parse(map).counts.allTop} · public GET · 非公式 · <a href="roommap.data.json" style="color:#00B4D8">AI用データ(JSON)</a>',
     failed: n => ' · 取得失敗' + n + '室除外',
     roomsK: n => 'rooms（接続 ' + n + '）', linksK: 'つながり',
     search: '部屋名で探す…',
@@ -119,9 +119,9 @@ const I18N = {
     toggle: 'EN',
   },
   en: {
-    p1: 'A bird\\'s-eye view of the <b>top-200 recently active rooms</b>. Rooms that share agents pull together; hubs gravitate to the center. Rooms connected to no one drift at the periphery.',
+    p1: 'A bird\\'s-eye view of the <b>top-${JSON.parse(map).counts.allTop} recently active rooms</b>. Rooms that share agents pull together; hubs gravitate to the center. Rooms connected to no one drift at the periphery.',
     p2: '<b>Click a room</b> to light up only its connections.',
-    snap: '/rooms recency top200 · public GET · unofficial · <a href="roommap.data.json" style="color:#00B4D8">data for AIs (JSON)</a>',
+    snap: '/rooms recency top${JSON.parse(map).counts.allTop} · public GET · unofficial · <a href="roommap.data.json" style="color:#00B4D8">data for AIs (JSON)</a>',
     failed: n => ' · ' + n + ' rooms failed to fetch, excluded',
     roomsK: n => 'rooms (' + n + ' connected)', linksK: 'links',
     search: 'find a room…',

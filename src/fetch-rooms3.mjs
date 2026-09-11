@@ -11,7 +11,7 @@ const observationStartedAt = new Date().toISOString();
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function get(path) {
   for (let a = 1; a <= 5; a++) {
-    const res = await fetch(BASE + path);
+    const res = await fetch(BASE + path, { headers: { 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(30000) });
     if (res.ok) return res;
     if (res.status !== 503 && res.status !== 429) return res;
     await sleep(600 * a);
@@ -31,7 +31,23 @@ const cls = n => n.startsWith('mb-') ? 'mb' : n.startsWith('p-') ? 'p' : n.start
   : n.startsWith('e-') ? 'e' : isHex(n) ? 'hex' : 'named';
 
 // 1) enumerate top-200, capture bytes + topic
-const list = await (await get('/rooms?limit=200')).text();
+let list, listEvidence;
+for (const limit of [200, 199, 198, 197, 196, 195]) {
+  const url = `/rooms?limit=${limit}`;
+  const response = await get(url);
+  if (!response?.ok) continue;
+  const modified = Date.parse(response.headers.get('last-modified'));
+  const retrievedAt = new Date().toISOString();
+  if (!Number.isFinite(modified) || Date.now() - modified > 120000 || modified > Date.now() + 60000) {
+    console.error(`Rejected stale/unverifiable list: ${url}, Last-Modified=${response.headers.get('last-modified')}`);
+    await response.body.cancel();
+    continue;
+  }
+  list = await response.text();
+  listEvidence = { url: BASE + url, retrievedAt, headers: Object.fromEntries(['last-modified', 'date', 'age', 'cache-control', 'cf-cache-status'].map(k => [k, response.headers.get(k)])) };
+  break;
+}
+if (!list) throw new Error('No room list with verified freshness; previous observation retained.');
 const entries = list.split('\n').filter(l => l.startsWith('/r/')).map(l => {
   const parts = l.trim().split(/\s+/);            // /r/name seq <n> <size> <age> ago · topic
   const name = parts[0].slice(3);
@@ -49,6 +65,7 @@ for (const e of entries) {
   const res = await get(`/r/${e.name}?format=json&limit=200`);
   if (!res || !res.ok) { console.error(`  FAILED ${e.name}`); e.failed = true; roomDids.set(e.name, new Set()); continue; }
   const data = await res.json();
+  if (data.last_seq < e.seq) throw new Error(`Stale room response for ${e.name}: ${data.last_seq} < listed ${e.seq}`);
   const dids = new Set((data.messages ?? []).map(m => m.from).filter(f => f && f.startsWith('did:key:')));
   roomDids.set(e.name, dids);
   e.agents = dids.size;
@@ -74,9 +91,10 @@ const keepNames = new Set(rooms.map(r => r.name));
 const keptLinks = links.filter(l => keepNames.has(l.source) && keepNames.has(l.target));
 
 const out = {
+  listEvidence,
   observation: { startedAt: observationStartedAt, completedAt: new Date().toISOString() },
   generatedFor: 'Technocore room map v3 — overview (size=presence, edge=shared DIDs, isolates included)',
-  scopeNote: 'all successfully fetched top-200 recency-active rooms; DIDs from last 200 msgs/room; isolation is sample-relative',
+  scopeNote: `all successfully fetched top-${entries.length} recency-active rooms; DIDs from last 200 msgs/room; isolation is sample-relative`,
   counts: { rooms: rooms.length, links: keptLinks.length, allTop: entries.length,
     failed: entries.filter(e => e.failed).length },
   rooms, links: keptLinks,
